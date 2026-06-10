@@ -29,4 +29,5 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     ui_cleanup(&ui_context);
 
     return result;
+    
 }
