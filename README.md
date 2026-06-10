@@ -58,13 +58,13 @@
 ![](assets/GAME1.png)
 
 **Конец игры**
-![](assets\GAME2.png)
+![](assets/GAME2.png)
 
 **Игра**
-![](assets\GAME3.png)
+![](assets/GAME3.png)
 
 **Пауза**
-![](assets\GAME4.png)
+![](assets/GAME4.png)
 
 # Система прогрессивной сложности
 
