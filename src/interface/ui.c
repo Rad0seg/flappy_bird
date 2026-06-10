@@ -322,6 +322,10 @@ static int create_back_buffer(UIContext* ctx) {
 int ui_init(UIContext* ctx, HINSTANCE hInstance) {
     memset(ctx, 0, sizeof(UIContext));
 
+    // Точность системного таймера 1 мс
+    // (иначе таймауты ожидания кратны ~15.6 мс и кадры неравномерны)
+    timeBeginPeriod(1);
+
     ctx->width = WINDOW_WIDTH;
     ctx->height = WINDOW_HEIGHT;
 
@@ -585,12 +589,22 @@ void ui_render(UIContext* ctx, const GameState* state) {
     BitBlt(ctx->hdc, 0, 0, ctx->width, ctx->height, ctx->back_buffer, 0, 0, SRCCOPY);
 }
 
-// Главный цикл с обработкой сообщений и обновлением игры
+// Главный игровой цикл с фиксированным шагом логики (60 обновлений/сек).
+// Sleep не используется: ожидание следующего тика выполняется через
+// MsgWaitForMultipleObjects, которое одновременно "просыпается" при
+// приходе сообщений Windows, поэтому ввод обрабатывается без задержки.
 int ui_run(UIContext* ctx, GameState* state) {
     g_game_state = state;
 
+    const float FIXED_DT = 1.0f / 60.0f;  // фиксированный шаг логики
+    float accumulator = 0.0f;             // накопитель необработанного времени
+
     MSG msg;
+    msg.wParam = 0;
     int running = 1;
+
+    // Сброс отметки времени, чтобы первый кадр не получил огромный dt
+    QueryPerformanceCounter(&ctx->last_time);
 
     while (running) {
         // Обработка всех сообщений Windows (неблокирующая)
@@ -601,22 +615,42 @@ int ui_run(UIContext* ctx, GameState* state) {
             TranslateMessage(&msg);
             DispatchMessageA(&msg);
         }
+        if (!running) break;
 
-        // Вычисление delta time с высокой точностью
+        // Реальное время, прошедшее с прошлой итерации
         LARGE_INTEGER now;
         QueryPerformanceCounter(&now);
-        float dt = (float)(now.QuadPart - ctx->last_time.QuadPart) /
-                   (float)ctx->frequency.QuadPart;
+        float frame_time = (float)(now.QuadPart - ctx->last_time.QuadPart) /
+                           (float)ctx->frequency.QuadPart;
         ctx->last_time = now;
-        
-        // Ограничение delta time от скачков
-        if (dt > 0.1f) dt = 0.1f;
 
-        // Обновление логики игры и отрисовка
-        game_update(state, dt);
+        // Защита от "прыжка времени" (перетаскивание окна, лаг системы):
+        // не даем логике выполнить больше 15 шагов за одну итерацию
+        if (frame_time > 0.25f) frame_time = 0.25f;
+
+        accumulator += frame_time;
+
+        // Логика выполняется фиксированными шагами, сколько накопилось.
+        // Если кадр занял 1/30 c - выполнится 2 шага, если 1/120 c - 0 или 1.
+        // Скорость игры одинакова на любом железе независимо от FPS.
+        while (accumulator >= FIXED_DT) {
+            game_update(state, FIXED_DT);
+            accumulator -= FIXED_DT;
+        }
+
+        // Отрисовка текущего состояния (один раз за итерацию)
         ui_render(ctx, state);
 
-        Sleep(1);
+        // Ожидание до следующего шага логики БЕЗ Sleep:
+        // поток блокируется до истечения таймаута ЛИБО до прихода
+        // любого сообщения (нажатие клавиши разбудит цикл мгновенно)
+        float wait_s = FIXED_DT - accumulator;
+        if (wait_s > 0.0f) {
+            DWORD wait_ms = (DWORD)(wait_s * 1000.0f);
+            if (wait_ms > 0) {
+                MsgWaitForMultipleObjects(0, NULL, FALSE, wait_ms, QS_ALLINPUT);
+            }
+        }
     }
 
     return (int)msg.wParam;
@@ -631,6 +665,9 @@ void ui_cleanup(UIContext* ctx) {
     if (ctx->back_buffer) DeleteDC(ctx->back_buffer);
     if (ctx->hdc)         ReleaseDC(ctx->hwnd, ctx->hdc);
     if (ctx->hwnd)        DestroyWindow(ctx->hwnd);
+
+    // Парный вызов к timeBeginPeriod из ui_init
+    timeEndPeriod(1);
 }
 
 // Оконная процедура для обработки сообщений Win32
