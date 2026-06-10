@@ -55,7 +55,7 @@
 
 # Скриншоты
 **Главное меню**
-![](assets\GAME1.png)
+![](assets/GAME1.png)
 
 **Конец игры**
 ![](assets\GAME2.png)
