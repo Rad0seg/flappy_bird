@@ -2,9 +2,6 @@
 #include <stdio.h>
 #include <math.h>
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
 static const char* WINDOW_CLASS_NAME = "FlappyBirdWindowClass";
 static const char* WINDOW_TITLE = "Flappy Bird";
